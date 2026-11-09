@@ -1,0 +1,9 @@
+[package]
+name = "rust-uefi"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.35"
+tinyvec = { version = "1.6", features = ["rustc_1_55"] }
+uefi = { version = "0.41.0", features = ["panic_handler", "logger"] }
