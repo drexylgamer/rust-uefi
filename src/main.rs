@@ -101,7 +101,7 @@ fn clear_screen() {
 }
 
 fn write_boilerplate_message() {
-    println("\n\n   > DREXYL BOOT MANAGER\n");
+    println("\n\n   > ROOKIE'S BOOT MANAGER\n");
 }
 
 fn println(message: &str) {
@@ -244,17 +244,6 @@ fn scan_for_efi_files(
                                       (slice[len - 1] == 'i' || slice[len - 1] == 'I');
                     }
 
-                    // EXCEPTION: Match raw Linux kernel EFI stubs starting with "vmlinuz"
-                    if !is_bootable && len >= 7 {
-                        is_bootable = (slice[0] == 'v') && 
-                                      (slice[1] == 'm') && 
-                                      (slice[2] == 'l') && 
-                                      (slice[3] == 'i') && 
-                                      (slice[4] == 'n') && 
-                                      (slice[5] == 'u') && 
-                                      (slice[6] == 'z');
-                    }
-
                     // 3. Register the file if it passed any boot constraints
                     if is_bootable && efi_list.len() < 64 {
                         let mut full_path = [Char16::default(); 256];
@@ -342,64 +331,6 @@ fn uefi_logic(efi: &Efi) {
 	    boot_policy: BootPolicy::ExactMatch,
 	},
     ).expect("Failed to load target img into memory");
-
-    // Configure options via LoadedImage protocol
-    if let Ok(mut loaded_image) = boot::open_protocol_exclusive::<LoadedImage>(loaded_image_handle) {
-        
-        let is_linux = clean_boot_path.as_slice().len() >= 7 && 
-                       clean_boot_path.as_slice()[0] == 'v' && 
-                       clean_boot_path.as_slice()[1] == 'm';
-
-        if is_linux {
-            if let Ok(mut fs) = boot::open_protocol_exclusive::<SimpleFileSystem>(efi.part) {
-                if let Ok(mut root) = fs.open_volume() {
-                    let mut file_buf = [0u8; 1024];
-                    
-                    if let Ok(file_handle) = root.open(cstr16!(r"\refind_linux.conf"), FileMode::Read, FileAttribute::empty()) {
-                        if let Some(mut file) = file_handle.into_regular_file() {
-                            let _ = file.read(&mut file_buf);
-                            
-                            // FIX: Moved variable to a safe local stack layout 
-                            let mut options_buffer = [0u16; 256];
-                            let mut out_idx = 0;
-                            let mut start_copy = false;
-
-                            for chunk in file_buf.windows(5) {
-                                if chunk == b"root=" {
-                                    start_copy = true;
-                                }
-                                if start_copy && out_idx < 254 {
-                                    let ch = chunk[0];
-                                    if ch == b'\n' || ch == b'\r' || ch == b'"' { break; }
-                                    options_buffer[out_idx] = ch as u16;
-                                    out_idx += 1;
-                                }
-                            }
-                            
-                            let initrd_append = cstr16!(" initrd=\\initramfs-linux-cachyos.img");
-                            for &ch in initrd_append.as_slice() {
-                                if out_idx < 254 {
-                                    options_buffer[out_idx] = u16::from(ch);
-                                    out_idx += 1;
-                                }
-                            }
-                            
-                            options_buffer[out_idx] = 0; // Null terminator
-                            
-                            unsafe {
-                                // Provide safe cast coordinates directly out of our stack array
-                                loaded_image.set_load_options(
-                                    options_buffer.as_ptr() as *const u8,
-                                    ((out_idx + 1) * 2) as u32
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     boot::start_image(loaded_image_handle).expect("Failed to execute image");
 }
 
